@@ -1,0 +1,7 @@
+boto3
+openai
+sqlalchemy
+pymysql
+python-dotenv
+tabulate
+psycopg2-binary
