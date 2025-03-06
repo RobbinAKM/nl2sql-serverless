@@ -3,14 +3,31 @@ app: nl2sql-serverless
 # "service" is the name of this project. This will also be added to your AWS resource names.
 service: nl2sql
 
+plugins:
+  - serverless-python-requirements
+  - serverless-offline
+  - serverless-dotenv-plugin
+
+custom:
+  pythonRequirements:
+    dockerizePip: non-linux
+
 provider:
   name: aws
   runtime: python3.11
+  environment:
+    OPENAI_API_KEY: ${env:OPENAI_API_KEY, ssm:/openai/api_key}
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "ssm:GetParameter"
+      Resource: "arn:aws:ssm:us-east-1:357427136175:parameter/openai/api_key"
 
 functions:
   hello:
-    handler: handler.hello
+    handler: handler.lambda_handler
     events:
       - httpApi:
           path: /
-          method: get
+          method: post
