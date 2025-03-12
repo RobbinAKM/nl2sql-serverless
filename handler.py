@@ -1,6 +1,6 @@
 import json
 from utils.openai_helper import chat
-from utils.db_helper import test_db_connection, get_database_schema
+
 
 
 def lambda_handler(event, context):
@@ -22,5 +22,5 @@ def lambda_handler(event, context):
 
     return {
         "statusCode": 200,
-        "body": json.dumps({"db_connected": "True", "query": user_query, "results": response, "history": history,"db_schema":"schema"})
+         "body": json.dumps({"db_connected": "True", "query": user_query, "results": response, "history": history})
     }

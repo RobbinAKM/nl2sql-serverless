@@ -1,96 +1,52 @@
-import json
-from sqlalchemy import create_engine, MetaData, inspect
-from sqlalchemy.sql import text
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.engine import Engine
+import os
+import boto3
 import logging
+from botocore.exceptions import BotoCoreError, ClientError
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-def test_db_connection(engine: Engine) -> bool:
-    """
-    Tests the connection to the database by executing a simple query.
+def get_dynamodb_client():
+    """Utility function to get the DynamoDB client, either for AWS or Local"""
+    if os.getenv("USE_DYNAMODB_LOCAL").lower() == "true":
+        logger.info("connecting to dynamoDB locally")
+        return boto3.resource(
+            "dynamodb",
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            endpoint_url="http://localhost:8000"  # DynamoDB Local URL
+        )
+    else:
+        logger.info("connecting to dynamoDB on AWS")
+        return boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
-    Args:
-        engine (Engine): SQLAlchemy database engine instance.
+# Initialize DynamoDB client (will use local or AWS based on the environment)
+dynamodb = get_dynamodb_client()
 
-    Returns:
-        bool: True if connection is successful, False otherwise.
-    """
+local_table= "SchemaTable"
+aws_table = "SchemaTableV2"
+
+def get_schema_by_id(schema_id):
+    """Utility function to fetch schema from DynamoDB by schemaId"""
+    table_name = os.getenv("DYNAMODB_TABLE", local_table)
+
+    if not schema_id:
+        raise ValueError("schemaId is required")
+
     try:
-        with engine.connect() as connection:
-            result = connection.execute(text("SELECT NOW();"))
-            current_time = result.scalar()  # Fetch the first column of the first row
-            logger.info(f"Connected Successfully! Current Time: {current_time}")
-            return True
-    except SQLAlchemyError as e:
-        logger.error(f"Error connecting to the database: {e}")
-        return False
+        # Access DynamoDB Table
+        table = dynamodb.Table(table_name)
+        response = table.get_item(Key={"schemaId": schema_id})
 
+        if "Item" not in response:
+            raise ValueError(f"Schema with ID {schema_id} not found")
 
+        return response["Item"]
 
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            raise FileNotFoundError(f"Table {table_name} not found")
+        raise RuntimeError(f"DynamoDB ClientError: {str(e)}")
 
-def get_database_schema(engine: Engine) -> dict:
-    """
-    Extracts and returns the schema of a given database.
-
-    Args:
-        engine (Engine): SQLAlchemy database engine instance.
-
-    Returns:
-        dict: Database schema containing tables, columns, foreign keys, indexes, and primary keys.
-    """
-    try:
-        metadata = MetaData()
-        metadata.reflect(bind=engine)
-
-        inspector = inspect(engine)
-        schema = {"tables": inspector.get_table_names()}
-
-        for table_name in schema["tables"]:
-            table_schema = {
-                "columns": [],
-                "foreign_keys": [],
-                "indexes": [],
-                "primary_keys": []
-            }
-
-            # Get column details
-            for col in inspector.get_columns(table_name):
-                table_schema["columns"].append({
-                    "name": col["name"],
-                    "type": str(col["type"]),
-                    "primary_key": col.get("primary_key", False)
-                })
-
-            # Get foreign keys
-            for fk in inspector.get_foreign_keys(table_name):
-                table_schema["foreign_keys"].append({
-                    "column": fk["constrained_columns"],
-                    "referenced_table": fk["referred_table"],
-                    "referenced_columns": fk["referred_columns"]
-                })
-
-            # Get indexes
-            for idx in inspector.get_indexes(table_name):
-                table_schema["indexes"].append({
-                    "name": idx["name"],
-                    "columns": idx["column_names"],
-                    "unique": idx.get("unique", False)
-                })
-
-            # Get primary keys
-            table_schema["primary_keys"] = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
-
-            # Store table schema
-            schema[table_name] = table_schema
-
-        return schema
-
-    except Exception as e:
-        logger.error(f"Error fetching database schema: {e}")
-        return {"error": str(e)}
-
+    except (BotoCoreError, Exception) as e:
+        raise RuntimeError(f"Unexpected error: {str(e)}")

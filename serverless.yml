@@ -17,6 +17,8 @@ provider:
   runtime: python3.11
   environment:
     OPENAI_API_KEY: ${env:OPENAI_API_KEY, ssm:/openai/api_key}
+    DYNAMODB_TABLE: ${env:DYNAMODB_TABLE, 'SchemaTable'}
+    USE_DYNAMODB_LOCAL: "true"
 
   iamRoleStatements:
     - Effect: "Allow"
@@ -24,9 +26,17 @@ provider:
         - "ssm:GetParameter"
       Resource: "arn:aws:ssm:us-east-1:357427136175:parameter/openai/api_key"
 
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:GetItem"
+        - "dynamodb:DescribeTable"
+      Resource: "arn:aws:dynamodb:us-east-1:*:table/${env:DYNAMODB_TABLE, 'SchemaTable'}"
+
 functions:
-  hello:
+  nl2sql:
     handler: handler.lambda_handler
+    timeout: 120
+    memorySize: 512
     events:
       - httpApi:
           path: /
